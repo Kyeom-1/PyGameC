@@ -94,7 +94,7 @@ class TextInput:
 			if self.cursor_visible:
 				pygame.draw.line(surface, TEXT_COLOR, (cursor_x, cursor_y), (cursor_x, self.rect.bottom - 8), 1)
 
-
+# yo wassup EGO 
 def compute_delta_y_from_speeds(initial_speed, final_speed, gravity):
 	"""
 	Compute vertical displacement needed so that impact speed equals final_speed,
