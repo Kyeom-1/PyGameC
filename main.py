@@ -94,7 +94,7 @@ class TextInput:
 			if self.cursor_visible:
 				pygame.draw.line(surface, TEXT_COLOR, (cursor_x, cursor_y), (cursor_x, self.rect.bottom - 8), 1)
 
-
+# yo wassup EGO 
 def compute_delta_y_from_speeds(initial_speed, final_speed, gravity):
 	"""
 	Compute vertical displacement needed so that impact speed equals final_speed,
@@ -294,6 +294,12 @@ def main():
 	show_vectors = True
 	show_trail = True
 
+	# Enemy/Target settings (world meters)
+	enemy_pos = [60.0, 0.0]  # x, y in meters
+	enemy_radius_m = 2.0
+	hit_target = False
+	explosion_time = 0.0
+
 	# Defaults for quick start
 	input_vi.text = "30"
 	input_vf.text = ""
@@ -333,6 +339,8 @@ def main():
 							vf_effective = vf
 						delta_y = compute_delta_y_from_speeds(vi, vf_effective, GRAVITY)
 						sim.launch(vi, angle_deg, delta_y)
+						hit_target = False
+						explosion_time = 0.0
 				elif event.key == pygame.K_p:
 					# Pause/Resume
 					sim.toggle_pause()
@@ -351,6 +359,15 @@ def main():
 				elif event.key == pygame.K_MINUS:
 					# Slow down
 					speed_multiplier = max(0.1, speed_multiplier / 1.5)
+				# Move enemy/target with WASD
+				elif event.key == pygame.K_a:
+					enemy_pos[0] -= 2.0
+				elif event.key == pygame.K_d:
+					enemy_pos[0] += 2.0
+				elif event.key == pygame.K_w:
+					enemy_pos[1] += 2.0
+				elif event.key == pygame.K_s:
+					enemy_pos[1] -= 2.0
 				angle_deg = clamp(angle_deg, angle_min, angle_max)
 
 			# Input handling
@@ -362,6 +379,17 @@ def main():
 		
 		# Update simulation
 		sim.update(dt, speed_multiplier)
+
+		# Check hit against enemy/target while running
+		if sim.is_running and not hit_target:
+			dx = sim.position[0] - enemy_pos[0]
+			dy = sim.position[1] - enemy_pos[1]
+			if dx * dx + dy * dy <= enemy_radius_m * enemy_radius_m:
+				hit_target = True
+				explosion_time = 0.5  # seconds
+				sim.stop()
+		elif hit_target and explosion_time > 0.0:
+			explosion_time = max(0.0, explosion_time - dt)
 
 		screen.fill(BACKGROUND_COLOR)
 
@@ -468,11 +496,41 @@ def main():
 		# Draw grid
 		draw_grid(screen, plot_rect, origin_px, scale)
 
+		# Draw mortar at origin with barrel pointing at angle_deg
+		mortar_base_px = world_to_screen(origin_px, scale, 0.0, 0.0)
+		# Base: small tripod-like shape
+		base_w = max(6, int(1.2 * scale))
+		base_h = max(4, int(0.6 * scale))
+		pygame.draw.line(screen, (200, 200, 210), (mortar_base_px[0] - base_w, mortar_base_px[1]), (mortar_base_px[0] + base_w, mortar_base_px[1]), 2)
+		pygame.draw.line(screen, (200, 200, 210), (mortar_base_px[0] - base_w, mortar_base_px[1]), (mortar_base_px[0], mortar_base_px[1] - base_h), 2)
+		pygame.draw.line(screen, (200, 200, 210), (mortar_base_px[0] + base_w, mortar_base_px[1]), (mortar_base_px[0], mortar_base_px[1] - base_h), 2)
+		# Barrel
+		barrel_len_m = 3.0
+		barrel_len_px = max(10, int(barrel_len_m * scale))
+		ang = math.radians(angle_deg)
+		barrel_end = (
+			mortar_base_px[0] + int(math.cos(ang) * barrel_len_px),
+			mortar_base_px[1] - int(math.sin(ang) * barrel_len_px)
+		)
+		pygame.draw.line(screen, (170, 220, 255), mortar_base_px, barrel_end, 3)
+		# Muzzle cap
+		pygame.draw.circle(screen, (255, 255, 255), barrel_end, 3)
+
 		# Draw theoretical trajectory
 		if theoretical_trajectory:
 			points_px = [world_to_screen(origin_px, scale, x, y) for (x, y) in theoretical_trajectory]
 			for i in range(1, len(points_px)):
 				pygame.draw.line(screen, (100, 100, 120), points_px[i - 1], points_px[i], 1)
+
+		# Draw enemy/target
+		enemy_px = world_to_screen(origin_px, scale, enemy_pos[0], enemy_pos[1])
+		enemy_screen_radius = max(3, int(enemy_radius_m * scale))
+		pygame.draw.circle(screen, (220, 90, 90), enemy_px, enemy_screen_radius)
+		pygame.draw.circle(screen, (255, 255, 255), enemy_px, enemy_screen_radius, 2)
+		if hit_target:
+			# Simple explosion effect
+			expansion = int((0.5 - explosion_time) * 40)
+			pygame.draw.circle(screen, (255, 200, 80), enemy_px, enemy_screen_radius + expansion, 2)
 
 		# Draw simulation trail
 		if show_trail and sim.trail_points:
@@ -529,6 +587,16 @@ def main():
 			message_lines.append((f"Speed Multiplier: {speed_multiplier:.1f}x", TEXT_COLOR))
 		else:
 			message_lines.append(("Status: STOPPED", (200, 200, 200)))
+
+		# Enemy info and hit indicator
+		message_lines.append(("", TEXT_COLOR))
+		message_lines.append(("Target:", (180, 180, 190)))
+		message_lines.append((f"pos = ({enemy_pos[0]:.1f}, {enemy_pos[1]:.1f}) m", TEXT_COLOR))
+		message_lines.append((f"radius = {enemy_radius_m:.1f} m", TEXT_COLOR))
+		if hit_target:
+			message_lines.append(("HIT!", (120, 255, 120)))
+		else:
+			message_lines.append(("Press WASD to move target", (160, 160, 170)))
 
 		# Theoretical data
 		if vi is not None and vi > 0:
