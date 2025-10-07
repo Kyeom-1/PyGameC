@@ -1,7 +1,34 @@
-import math
 import sys
 
 import pygame
+
+import math
+import sys
+import pygame
+def show_popup(screen, font, big_font, lines, window_width, window_height):
+	# Draw a modal popup in the center of the screen
+	popup_w, popup_h = 520, 400  # Further increased size
+	popup_x = (window_width - popup_w) // 2
+	popup_y = (window_height - popup_h) // 2
+	popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+	# Background
+	pygame.draw.rect(screen, (30, 30, 40), popup_rect, border_radius=12)
+	pygame.draw.rect(screen, (120, 180, 255), popup_rect, width=3, border_radius=12)
+	# Title
+	title = big_font.render("Result", True, (220, 255, 255))
+	screen.blit(title, (popup_x + (popup_w - title.get_width()) // 2, popup_y + 32))
+	# Content (more vertical spacing)
+	content_top = popup_y + 100
+	line_spacing = 44
+	for i, (msg, col) in enumerate(lines):
+		r = font.render(msg, True, col)
+		screen.blit(r, (popup_x + 48, content_top + i * line_spacing))
+	# Dismiss hint, placed well below the last line
+	hint = font.render("Click or press any key to close", True, (180, 180, 200))
+	hint_y = content_top + len(lines) * line_spacing + 24
+	# Ensure the hint doesn't go outside the popup
+	hint_y = min(hint_y, popup_y + popup_h - 48)
+	screen.blit(hint, (popup_x + (popup_w - hint.get_width()) // 2, hint_y))
 
 
 # Constants
@@ -304,22 +331,36 @@ def main():
 	input_vi.text = "30"
 	input_vf.text = ""
 
+
+	popup_active = False
+	popup_lines = []
+	popup_result = None
+
 	running = True
 	while running:
 		dt = clock.tick(FPS) / 1000.0
 
 		for event in pygame.event.get():
+			if popup_active:
+				if event.type == pygame.QUIT:
+					running = False
+				elif event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+					popup_active = False
+					# Reset projectile state so popup doesn't reappear
+					sim.stop()
+					sim.position = (0.0, 0.0)
+					hit_target = False
+				continue
+
 			if event.type == pygame.QUIT:
 				running = False
 			elif event.type == pygame.VIDEORESIZE:
-				# Handle window resize with minimum constraints
-				window_width = max(640, event.w)  # Minimum width
-				window_height = max(480, event.h)  # Minimum height
+				window_width = max(640, event.w)
+				window_height = max(480, event.h)
 				screen = pygame.display.set_mode((window_width, window_height), pygame.RESIZABLE)
 				update_layout()
 			elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
 				running = False
-			# Angle controls: mouse wheel and arrow keys
 			elif event.type == pygame.MOUSEWHEEL:
 				angle_deg += event.y * 1.5
 				angle_deg = clamp(angle_deg, angle_min, angle_max)
@@ -329,7 +370,6 @@ def main():
 				elif event.key == pygame.K_DOWN:
 					angle_deg -= 1.0
 				elif event.key == pygame.K_SPACE:
-					# Launch simulation
 					vi = input_vi.get_value()
 					vf = input_vf.get_value()
 					if vi is not None and vi > 0:
@@ -341,25 +381,20 @@ def main():
 						sim.launch(vi, angle_deg, delta_y)
 						hit_target = False
 						explosion_time = 0.0
+						popup_active = False
 				elif event.key == pygame.K_p:
-					# Pause/Resume
 					sim.toggle_pause()
 				elif event.key == pygame.K_r:
-					# Reset
 					sim.stop()
+					popup_active = False
 				elif event.key == pygame.K_v:
-					# Toggle vectors
 					show_vectors = not show_vectors
 				elif event.key == pygame.K_t:
-					# Toggle trail
 					show_trail = not show_trail
 				elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-					# Speed up
 					speed_multiplier = min(5.0, speed_multiplier * 1.5)
 				elif event.key == pygame.K_MINUS:
-					# Slow down
 					speed_multiplier = max(0.1, speed_multiplier / 1.5)
-				# Move enemy/target with WASD
 				elif event.key == pygame.K_a:
 					enemy_pos[0] -= 2.0
 				elif event.key == pygame.K_d:
@@ -370,26 +405,24 @@ def main():
 					enemy_pos[1] -= 2.0
 				angle_deg = clamp(angle_deg, angle_min, angle_max)
 
-			# Input handling
 			input_vi.handle_event(event)
 			input_vf.handle_event(event)
 
-		input_vi.update(dt)
-		input_vf.update(dt)
-		
-		# Update simulation
-		sim.update(dt, speed_multiplier)
+		if not popup_active:
+			input_vi.update(dt)
+			input_vf.update(dt)
+			sim.update(dt, speed_multiplier)
 
-		# Check hit against enemy/target while running
-		if sim.is_running and not hit_target:
-			dx = sim.position[0] - enemy_pos[0]
-			dy = sim.position[1] - enemy_pos[1]
-			if dx * dx + dy * dy <= enemy_radius_m * enemy_radius_m:
-				hit_target = True
-				explosion_time = 0.5  # seconds
-				sim.stop()
-		elif hit_target and explosion_time > 0.0:
-			explosion_time = max(0.0, explosion_time - dt)
+			# Check hit against enemy/target while running
+			if sim.is_running and not hit_target:
+				dx = sim.position[0] - enemy_pos[0]
+				dy = sim.position[1] - enemy_pos[1]
+				if dx * dx + dy * dy <= enemy_radius_m * enemy_radius_m:
+					hit_target = True
+					explosion_time = 0.5
+					sim.stop()
+			elif hit_target and explosion_time > 0.0:
+				explosion_time = max(0.0, explosion_time - dt)
 
 		screen.fill(BACKGROUND_COLOR)
 
@@ -438,14 +471,14 @@ def main():
 		theoretical_trajectory = []
 		theoretical_range = 0.0
 		theoretical_t_flight = 0.0
-		
+		t_flight = None
+		vf_effective = None
 		if vi is not None and vi > 0:
 			if vf is None:
 				vf_effective = vi
 			else:
 				vf_effective = vf
 
-			# Determine landing height offset from speed difference
 			delta_y = compute_delta_y_from_speeds(vi, vf_effective, GRAVITY)
 			t_flight = solve_time_of_flight(vi, angle_deg, delta_y, GRAVITY)
 
@@ -619,6 +652,29 @@ def main():
 		for i, (msg, col) in enumerate(message_lines):
 			r = font.render(msg, True, col)
 			screen.blit(r, (panel_rect.x + 20, info_y + i * 24))
+
+
+		# Show popup if simulation just ended (not running, not paused, and not already shown)
+		if not popup_active and not sim.is_running and (sim.position != (0, 0) or hit_target):
+			# Only show if a launch was performed
+			if t_flight is not None and t_flight > 0:
+				popup_lines = []
+				popup_lines.append((f"Angle: {angle_deg:.1f}°", ACCENT_COLOR))
+				popup_lines.append((f"Initial speed: {vi:.2f} m/s", TEXT_COLOR))
+				if vf is not None:
+					popup_lines.append((f"Final speed: {vf:.2f} m/s", TEXT_COLOR))
+				popup_lines.append((f"Time of flight: {t_flight:.2f} s", (180,255,180)))
+				popup_lines.append((f"Range: {theoretical_range:.2f} m", (255,220,120)))
+				if hit_target:
+					popup_lines.append(("Target: HIT!", (120,255,120)))
+				else:
+					popup_lines.append(("Target: missed", (255,120,120)))
+				popup_active = True
+
+		if popup_active:
+			show_popup(screen, font, big_font, popup_lines, window_width, window_height)
+			pygame.display.flip()
+			continue
 
 		pygame.display.flip()
 
