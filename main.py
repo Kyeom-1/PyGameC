@@ -76,7 +76,8 @@ class TextInput:
 				return
 			if event.key == pygame.K_BACKSPACE:
 				self.text = self.text[:-1]
-			elif event.key == pygame.K_MINUS and not self.numeric:
+			elif event.key == pygame.K_MINUS and self.numeric:
+				# allow minus for numeric fields (so negative numbers can be entered)
 				self.text += "-"
 			elif event.key == pygame.K_PERIOD or event.unicode == ".":
 				if "." not in self.text:
@@ -464,7 +465,7 @@ def main():
 		else:
 			input_vf.invalid = False
 
-		info_y = 450
+		# Start messages near the bottom of the panel but ensure they stay inside the panel
 		message_lines = []
 
 		# Calculate theoretical trajectory for visualization
@@ -648,10 +649,34 @@ def main():
 		else:
 			message_lines.append(("Enter a valid initial speed (m/s).", (200, 200, 210)))
 
-		# Render messages
-		for i, (msg, col) in enumerate(message_lines):
+		# Render messages: compute a start Y so text won't draw off the panel if window is small
+		line_h = 24
+		# preferred start (roughly under the controls)
+		preferred_start = panel_rect.y + 300
+		min_start = panel_rect.y + 80
+		info_start = max(preferred_start, min_start)
+		# Compute available vertical space for messages
+		available_h = panel_rect.bottom - 10 - info_start
+		if available_h < line_h:
+			# Not enough room at preferred spot: move start up so at least one line can show
+			info_start = max(panel_rect.y + 80, panel_rect.bottom - 10 - line_h)
+			available_h = panel_rect.bottom - 10 - info_start
+		# How many lines fit
+		max_lines = max(1, available_h // line_h)
+		# Show the last lines that fit (so most relevant info is visible)
+		lines_to_show = message_lines[-max_lines:]
+		# Draw a background behind the text that covers the full panel width
+		# so underlying UI text can't show through
+		bg_x = panel_rect.x
+		bg_w = panel_rect.width
+		bg_h = len(lines_to_show) * line_h + 8
+		bg_y = info_start - 6
+		# Use the same color as the panel so the block fully hides what's underneath
+		pygame.draw.rect(screen, (24, 24, 30), (bg_x, bg_y, bg_w, bg_h))
+		# Draw the lines
+		for i, (msg, col) in enumerate(lines_to_show):
 			r = font.render(msg, True, col)
-			screen.blit(r, (panel_rect.x + 20, info_y + i * 24))
+			screen.blit(r, (panel_rect.x + 20, info_start + i * line_h))
 
 
 		# Show popup if simulation just ended (not running, not paused, and not already shown)
